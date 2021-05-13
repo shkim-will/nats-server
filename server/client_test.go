@@ -2147,25 +2147,27 @@ func TestClientNoSlowConsumerIfConnectExpected(t *testing.T) {
 }
 
 func TestClientStalledDuration(t *testing.T) {
+	max := DEFAULT_STALL_CLIENT_MAX_DURATION
+	min := DEFAULT_STALL_CLIENT_MAX_DURATION / 10
 	for _, test := range []struct {
 		name        string
 		pb          int64
 		mp          int64
 		expectedTTL time.Duration
 	}{
-		{"pb above mp", 110, 100, stallClientMaxDuration},
-		{"pb equal mp", 100, 100, stallClientMaxDuration},
-		{"pb below mp/2", 49, 100, stallClientMinDuration},
-		{"pb equal mp/2", 50, 100, stallClientMinDuration},
-		{"pb at 55% of mp", 55, 100, stallClientMinDuration + 1*stallClientMinDuration},
-		{"pb at 60% of mp", 60, 100, stallClientMinDuration + 2*stallClientMinDuration},
-		{"pb at 70% of mp", 70, 100, stallClientMinDuration + 4*stallClientMinDuration},
-		{"pb at 80% of mp", 80, 100, stallClientMinDuration + 6*stallClientMinDuration},
-		{"pb at 90% of mp", 90, 100, stallClientMinDuration + 8*stallClientMinDuration},
-		{"pb at 99% of mp", 99, 100, stallClientMinDuration + 9*stallClientMinDuration},
+		{"pb above mp", 110, 100, max},
+		{"pb equal mp", 100, 100, max},
+		{"pb below mp/2", 49, 100, min},
+		{"pb equal mp/2", 50, 100, min},
+		{"pb at 55% of mp", 55, 100, min + 1*min},
+		{"pb at 60% of mp", 60, 100, min + 2*min},
+		{"pb at 70% of mp", 70, 100, min + 4*min},
+		{"pb at 80% of mp", 80, 100, min + 6*min},
+		{"pb at 90% of mp", 90, 100, min + 8*min},
+		{"pb at 99% of mp", 99, 100, min + 9*min},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if ttl := stallDuration(test.pb, test.mp); ttl != test.expectedTTL {
+			if ttl := stallDuration(test.pb, test.mp, min, max); ttl != test.expectedTTL {
 				t.Fatalf("For pb=%v mp=%v, expected TTL to be %v, got %v", test.pb, test.mp, test.expectedTTL, ttl)
 			}
 		})

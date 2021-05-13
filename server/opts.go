@@ -261,6 +261,9 @@ type Options struct {
 	// and used as a filter criteria for some system requests
 	Tags jwt.TagList `json:"-"`
 
+	// StallClientMaxDuration is maximum stalling duration client`s read loop for fast producers.
+	StallClientMaxDuration time.Duration `json:"stall_client_max_duration"`
+
 	// private fields, used to know if bool options are explicitly
 	// defined in config and/or command line params.
 	inConfig  map[string]bool
@@ -845,6 +848,14 @@ func (o *Options) processConfigFileLine(k string, v interface{}, errors *[]error
 			return
 		}
 		o.LameDuckDuration = dur
+	case "stall_client_max_duration":
+		dur, err := time.ParseDuration(v.(string))
+		if err != nil {
+			err := &configErr{tk, fmt.Sprintf("error parsing stall_client_max_duration: %v", err)}
+			*errors = append(*errors, err)
+			return
+		}
+		o.StallClientMaxDuration = dur
 	case "lame_duck_grace_period":
 		dur, err := time.ParseDuration(v.(string))
 		if err != nil {
@@ -4053,6 +4064,9 @@ func setBaselineOptions(opts *Options) {
 	}
 	if opts.JetStreamMaxStore == 0 {
 		opts.JetStreamMaxStore = -1
+	}
+	if opts.StallClientMaxDuration == time.Duration(0) {
+		opts.StallClientMaxDuration = DEFAULT_STALL_CLIENT_MAX_DURATION
 	}
 }
 

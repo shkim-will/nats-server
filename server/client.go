@@ -106,10 +106,6 @@ const (
 	// send CONNECT+PING, cap the maximum time before server can send
 	// the RTT PING.
 	maxNoRTTPingBeforeFirstPong = 2 * time.Second
-
-	// For stalling fast producers
-	stallClientMinDuration = 100 * time.Millisecond
-	stallClientMaxDuration = time.Second
 )
 
 var readLoopReportThreshold = readLoopReport
@@ -285,19 +281,21 @@ type pinfo struct {
 
 // outbound holds pending data for a socket.
 type outbound struct {
-	p   []byte        // Primary write buffer
-	s   []byte        // Secondary for use post flush
-	nb  net.Buffers   // net.Buffers for writev IO
-	sz  int32         // limit size per []byte, uses variable BufSize constants, start, min, max.
-	sws int32         // Number of short writes, used for dynamic resizing.
-	pb  int64         // Total pending/queued bytes.
-	pm  int32         // Total pending/queued messages.
-	fsp int32         // Flush signals that are pending per producer from readLoop's pcd.
-	sg  *sync.Cond    // To signal writeLoop that there is data to flush.
-	wdl time.Duration // Snapshot of write deadline.
-	mp  int64         // Snapshot of max pending for client.
-	lft time.Duration // Last flush time for Write.
-	stc chan struct{} // Stall chan we create to slow down producers on overrun, e.g. fan-in.
+	p      []byte        // Primary write buffer
+	s      []byte        // Secondary for use post flush
+	nb     net.Buffers   // net.Buffers for writev IO
+	sz     int32         // limit size per []byte, uses variable BufSize constants, start, min, max.
+	sws    int32         // Number of short writes, used for dynamic resizing.
+	pb     int64         // Total pending/queued bytes.
+	pm     int32         // Total pending/queued messages.
+	fsp    int32         // Flush signals that are pending per producer from readLoop's pcd.
+	sg     *sync.Cond    // To signal writeLoop that there is data to flush.
+	wdl    time.Duration // Snapshot of write deadline.
+	mp     int64         // Snapshot of max pending for client.
+	lft    time.Duration // Last flush time for Write.
+	stc    chan struct{} // Stall chan we create to slow down producers on overrun, e.g. fan-in.
+	minscd time.Duration // Minimum stalled time for fast client producer.
+	maxscd time.Duration // Maximum stalled time for fast client producer.
 }
 
 type perm struct {
@@ -556,6 +554,9 @@ func (c *client) initClient() {
 	// Snapshots to avoid mutex access in fast paths.
 	c.out.wdl = opts.WriteDeadline
 	c.out.mp = opts.MaxPending
+	c.out.maxscd = opts.StallClientMaxDuration
+	c.out.minscd = opts.StallClientMaxDuration / 10
+
 	// Snapshot max control line since currently can not be changed on reload and we
 	// were checking it on each call to parse. If this changes and we allow MaxControlLine
 	// to be reloaded without restart, this code will need to change.
@@ -2935,7 +2936,7 @@ func (c *client) msgHeader(subj, reply []byte, sub *subscription) []byte {
 
 func (c *client) stalledWait(producer *client) {
 	stall := c.out.stc
-	ttl := stallDuration(c.out.pb, c.out.mp)
+	ttl := stallDuration(c.out.pb, c.out.mp, c.out.minscd, c.out.maxscd)
 	c.mu.Unlock()
 	defer c.mu.Lock()
 
@@ -2946,10 +2947,10 @@ func (c *client) stalledWait(producer *client) {
 	}
 }
 
-func stallDuration(pb, mp int64) time.Duration {
-	ttl := stallClientMinDuration
+func stallDuration(pb, mp int64, min, max time.Duration) time.Duration {
+	ttl := min
 	if pb >= mp {
-		ttl = stallClientMaxDuration
+		ttl = max
 	} else if hmp := mp / 2; pb > hmp {
 		bsz := hmp / 10
 		additional := int64(ttl) * ((pb - hmp) / bsz)

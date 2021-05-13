@@ -203,4 +203,7 @@ const (
 
 	// DEFAULT_FETCH_TIMEOUT is the default time that the system will wait for an account fetch to return.
 	DEFAULT_ACCOUNT_FETCH_TIMEOUT = 2 * time.Second
+
+	// DEFAULT_STALL_CLIENT_MAX_DURATION is the maximum time of stalling client`s read loop for fast producers.
+	DEFAULT_STALL_CLIENT_MAX_DURATION = 1 * time.Second
 )
